@@ -1,6 +1,8 @@
 from random import choice, randint, random, shuffle
 from enum import Enum
 import pygame, pgzero, pgzrun, sys
+from pygame import *
+import math
 
 # Check Python version number. sys.version_info gives version as a tuple, e.g. if (3,7,2,'final',0) for version 3.7.2.
 # Unlike many languages, Python can compare two tuples in the same way that you can compare numbers.
@@ -21,7 +23,7 @@ if pgzero_version < [1,2]:
 # Set up constants
 WIDTH = 800
 HEIGHT = 480
-TITLE = "Cavern"
+TITLE = "30001606 CS3S667 Coursework 2"
 
 NUM_ROWS = 18
 NUM_COLUMNS = 28
@@ -288,6 +290,7 @@ class Fruit(GravityActor):
         self.image = "fruit" + str(self.type) + anim_frame
 
 class Player(GravityActor):
+    
     def __init__(self):
         # Call constructor of parent class. Initial pos is 0,0 but reset is always called straight afterwards which
         # will set the actual starting position.
@@ -295,6 +298,8 @@ class Player(GravityActor):
 
         self.lives = 2
         self.score = 0
+
+        
 
     def reset(self):
         self.pos = (WIDTH / 2, 100)
@@ -332,6 +337,19 @@ class Player(GravityActor):
         self.fire_timer -= 1
         self.hurt_timer -= 1
 
+        if self.fire_timer <= 0:
+            x = min(730, max(70, self.x + self.direction_x * 38))
+            y = self.y - 35
+            self.blowing_orb = Orb((x,y), self.direction_x)
+            game.orbs.append(self.blowing_orb)
+            game.play_sound("blow", 4)
+            self.fire_timer = 20
+
+        if game.fruits:
+            fruitX, fruitY = game.fruits[0].pos
+            print(fruitX, fruitY)
+            
+
         if self.landed:
             # Hurt timer starts at 200, but drops to 100 once the player has landed
             self.hurt_timer = min(self.hurt_timer, 100)
@@ -352,6 +370,29 @@ class Player(GravityActor):
             # We're not hurt
             # Get keyboard input. dx represents the direction the player is facing
             dx = 0
+
+        if game.fruits:
+            # Find the closest fruit using a lambda function to find the distance of all fruits in the list
+            # Then use the min() function to get the smallest distance and store it in closest_fruit
+            closest_fruit = min(game.fruits, key=lambda fruit: math.hypot(fruit.x - self.x, fruit.y - self.y))
+            # Store the x and y values of the closest fruit
+            fruit_x, fruit_y = closest_fruit.pos
+            # Store the movement value (-1 or 1) depending on the distance between the fruit and the AI
+            dx = sign(fruit_x - self.x)
+            dy = sign(fruit_y - self.y)
+
+            # Move in the calculated direction
+            self.move(dx, dy, 4)
+
+            # This checks to see if the fruit is above the player then jump, this still needs to be worked on
+            # Also need to add onto this if the fruit is below and the AI can't reach it
+            if fruit_y < self.y and self.vel_y == 0 and self.landed:
+                # The fruit is above the player, and the player is on the ground
+                # Make the player jump
+                self.vel_y = -20
+                self.landed = False
+                game.play_sound("jump")
+                
             if keyboard.left:
                 dx = -1
             elif keyboard.right:
@@ -493,7 +534,6 @@ class Game:
         self.player = player
         self.level_colour = -1
         self.level = -1
-
         self.next_level()
 
     def fire_probability(self):
@@ -587,6 +627,7 @@ class Game:
         if self.timer % 100 == 0 and len(self.pending_enemies + self.enemies) > 0:
             # Create fruit at random position
             self.fruits.append(Fruit((randint(70, 730), randint(75, 400))))
+
 
         # Every 81 frames, if there is at least 1 pending enemy, and the number of active enemies is below the current
         # level's maximum enemies, create a robot
