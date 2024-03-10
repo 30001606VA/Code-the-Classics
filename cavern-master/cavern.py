@@ -293,8 +293,13 @@ class Fruit(GravityActor):
 def distance(obj1, obj2):
     return math.sqrt((obj1.x - obj2.x)**2 + (obj1.y - obj2.y)**2)
 
+
+class AIState(Enum):
+    LOOKING_FOR_FRUIT = 1
+    MOVING_TO_FRUIT = 2
+    MOVING_OFF_PLATFORM = 3
+
 class Player(GravityActor):
-    
     def __init__(self):
         # Call constructor of parent class. Initial pos is 0,0 but reset is always called straight afterwards which
         # will set the actual starting position.
@@ -305,6 +310,7 @@ class Player(GravityActor):
         self.edge_direction = None  # New variable to remember edge direction
         self.ignored_fruit = None  # Reference to the fruit currently being ignored
         self.ignore_fruit_until = 0  # Time until the fruit can be considered again
+        self.state = AIState.LOOKING_FOR_FRUIT
         
 
     def reset(self):
@@ -336,6 +342,24 @@ class Player(GravityActor):
         else:
             return False
 
+    def find_platform_edges(self):
+        # Starting from the player's current position, we move left until we find the edge of the platform
+        left_edge_x = int((self.x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE)
+        while left_edge_x > 0 and block(LEVEL_X_OFFSET + left_edge_x * GRID_BLOCK_SIZE, int(self.y) + GRID_BLOCK_SIZE):
+            left_edge_x -= 1
+        # Adjust to get the pixel coordinate just off the platform edge
+        left_edge_x = left_edge_x * GRID_BLOCK_SIZE + LEVEL_X_OFFSET
+
+        # Starting from the player's current position, we move right until we find the edge of the platform
+        right_edge_x = int((self.x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE)
+        while right_edge_x < NUM_COLUMNS - 1 and block(LEVEL_X_OFFSET + right_edge_x * GRID_BLOCK_SIZE, int(self.y) + GRID_BLOCK_SIZE):
+            right_edge_x += 1
+        # Adjust to get the pixel coordinate just off the platform edge
+        right_edge_x = (right_edge_x + 1) * GRID_BLOCK_SIZE + LEVEL_X_OFFSET - GRID_BLOCK_SIZE
+
+        # The AI can move off the platform if necessary
+        return left_edge_x, right_edge_x
+
     def update(self):
         # Call GravityActor.update - parameter is whether we want to perform collision detection as we fall. If health
         # is zero, we want the player to just fall out of the level
@@ -361,46 +385,77 @@ class Player(GravityActor):
             # We're not hurt
             # Check if there are any fruits
             if game.fruits:
-                # Find the closest fruit
-                closest_fruit = min(game.fruits, key=lambda fruit: distance(self, fruit))
-                fruit_x, fruit_y = closest_fruit.pos
+                fruit_x = 0
+                fruit_y = 0
+                if self.state == AIState.LOOKING_FOR_FRUIT:
+                    # Find the closest fruit
+                    closest_fruit = min(game.fruits, key=lambda fruit: distance(self, fruit))
+                    fruit_x, fruit_y = closest_fruit.pos
+                    if fruit_y < self.y:
+                        self.state = AIState.MOVING_OFF_PLATFORM
+                        print(self.state)
+                    elif fruit_y >= self.y:
+                        self.state = AIState.MOVING_TO_FRUIT
+                        print(self.state)
+                    else:
+                        self.state = AIState.LOOKING_FOR_FRUIT
+                        print(self.state)
+                if self.state == AIState.MOVING_TO_FRUIT:
+                    print(self.state)
+                    # Calculate horizontal movement direction
+                    dx = sign(fruit_x - self.x)
 
-                # Calculate horizontal movement direction
-                dx = sign(fruit_x - self.x)
-
-                # Check if the player is on a platform
-                if block(int(self.x), int(self.y + GRID_BLOCK_SIZE)):
-                    # Player is on a platform
-                    if fruit_y > self.y and abs(self.x - fruit_x) <= GRID_BLOCK_SIZE:
-                        # Fruit is directly below the player
-                        # Check if there is a platform below the player
-                        if block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
-                            # Platform below the player
-                            # Find the nearest edge of the platform
-                            left_edge_x = int((self.x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE) * GRID_BLOCK_SIZE + LEVEL_X_OFFSET
-                            right_edge_x = left_edge_x + GRID_BLOCK_SIZE
-                            edge_x = left_edge_x if abs(self.x - left_edge_x) < abs(self.x - right_edge_x) else right_edge_x
-                            dx = sign(edge_x - self.x)
-                        else:
-                            # No platform below the player, move horizontally towards the fruit
-                            if fruit_x < WIDTH // 2:
-                                # Fruit is on the left side of the screen, move to the left
-                                dx = -1
+                    # Check if the player is on a platform
+                    if block(int(self.x), int(self.y + GRID_BLOCK_SIZE)):
+                        # Player is on a platform
+                        if fruit_y > self.y and abs(self.x - fruit_x) <= GRID_BLOCK_SIZE:
+                            # Fruit is directly below the player
+                            # Check if there is a platform below the player
+                            if block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
+                                # Platform below the player
+                                # Find the nearest edge of the platform
+                                left_edge_x = int((self.x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE) * GRID_BLOCK_SIZE + LEVEL_X_OFFSET
+                                right_edge_x = left_edge_x + GRID_BLOCK_SIZE
+                                edge_x = left_edge_x if abs(self.x - left_edge_x) < abs(self.x - right_edge_x) else right_edge_x
+                                dx = sign(edge_x - self.x)
                             else:
-                                # Fruit is on the right side of the screen, move to the right
-                                dx = 1
-                else:
-                    # Player is not on a platform
-                    if fruit_y > self.y and not block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
-                        # Fruit is below the player and there is no platform below
-                        # Fall vertically towards the fruit
-                        dx = 0
-
+                                # No platform below the player, move horizontally towards the fruit
+                                if fruit_x < WIDTH // 2:
+                                    # Fruit is on the left side of the screen, move to the left
+                                    dx = -1
+                                else:
+                                    # Fruit is on the right side of the screen, move to the right
+                                    dx = 1
+                    else:
+                        # Player is not on a platform
+                        if fruit_y > self.y and not block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
+                            # Fruit is below the player and there is no platform below
+                            # Fall vertically towards the fruit
+                            dx = 0
+                if self.state == AIState.MOVING_OFF_PLATFORM:
+                    temp_y = self.y
+                    print(self.state)
+                    # Check if the player is on a platform
+                    if block(int(self.x), int(self.y + GRID_BLOCK_SIZE)):
+                        #find the edges of the platform the player is on
+                        edges = self.find_platform_edges()
+                        if (self.x - edges[0]) < (self.x - edges[1]):
+                            dx = sign(1)
+                        else:
+                            dx = sign(-1)
+                    if self.y < temp_y:
+                        print(self.state)
+                        self.state = AIState.LOOKING_FOR_FRUIT     
+                
+                if  block(int(self.x + GRID_BLOCK_SIZE), int(self.y)):
+                    self.direction_x * -1
+                    self.state = AIState.LOOKING_FOR_FRUIT     
+                    
                 self.direction_x = dx
                 self.move(dx, 0, 3)  # Adjust the movement speed if needed
                 
                 # Jump if necessary
-                if fruit_y < self.y and self.vel_y == 0 and self.landed:
+                if fruit_y > self.y and self.vel_y == 0 and self.landed:
                     self.vel_y = -20
                     self.landed = False
                     game.play_sound("jump")
