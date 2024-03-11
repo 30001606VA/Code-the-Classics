@@ -22,7 +22,7 @@ if pgzero_version < [1,2]:
 # Set up constants
 WIDTH = 800
 HEIGHT = 480
-TITLE = "Cavern"
+TITLE = "30001606"
 
 NUM_ROWS = 18
 NUM_COLUMNS = 28
@@ -315,7 +315,7 @@ class Player(GravityActor):
         self.hurt_timer = 100   # Invulnerable for this many frames
         self.health = 3
         self.blowing_orb = None
-        self.state = AIState.LOOKING_FOR_FRUIT
+        self.state = AIState.MOVING_TO_FRUIT
 
 
     
@@ -376,10 +376,9 @@ class Player(GravityActor):
                 fruit_x, fruit_y = closest_fruit.pos
                 print(fruit_x, fruit_y)
                 print(self.pos)
-                self.state = AIState.MOVING_TO_FRUIT
 
                 if self.state == AIState.MOVING_TO_FRUIT:
-                    #print(self.state)
+                    print(self.state)
                     if self.x >= fruit_x - 10 and self.x <= fruit_x + 10 and fruit_y < self.y:
                         print("Should be jumping")
                         self.direction_x = 0
@@ -392,30 +391,35 @@ class Player(GravityActor):
                         self.move(self.direction_x, 0, 3)
                         if fruit_y > self.y:
                             self.state = AIState.MOVING_OFF_PLATFORM
+
                     elif fruit_x - 2 < self.x:
                         self.direction_x = -1
                         self.move(self.direction_x, 0, 3)
                         if fruit_y > self.y:
                             self.state = AIState.MOVING_OFF_PLATFORM
+
                     elif fruit_x == self.x and fruit_y > self.y:
-                        self.direction_x = 1
                         self.state = AIState.MOVING_OFF_PLATFORM
 
 
                 
                 if self.state == AIState.MOVING_OFF_PLATFORM:
                     print(self.state)
-                    self.move(self.direction_x, 0, 3)
+                    # Check if AI is walking against a wall
+                    # If walking against a wall, decrease timer
                     if self.move(self.direction_x, 0, 3):
+                        print("Monkey is against a wall wtf")
                         if self.direction_x == 1:
                             self.direction_x = -1
                             self.move(self.direction_x, 0, 3)
                         else:
-                            #self.direction_x = 1
+                            self.direction_x = 1
                             self.move(self.direction_x, 0, 3)
                         self.wallTimer -= 1
                         print(self.wallTimer)
+                    # If timer is up, move other way and reset timer
                     elif self.wallTimer <= 0:
+                        print("Change direction")
                         if self.direction_x == 1:
                             self.direction_x = -1
                             self.move(self.direction_x, 0, 3)
@@ -425,11 +429,22 @@ class Player(GravityActor):
                             self.move(self.direction_x, 0, 3)
                             self.wallTimer = 5
                         print(self.direction_x)
-                        
-                    if fruit_y == self.y:
-                        self.state == AIState.MOVING_TO_FRUIT
+                    # If not touching a wall, move in a direction until fruit_y == self.y
+                    elif fruit_y > self.y:
+                        print("Fruit is below")
+                        # Check if on a platform
+                        if block(int(self.x), int(self.y + 1)):
+                            print("There is a block below")
+                        else:
+                            self.move(self.direction_x, 0, 3)
+                            self.state = AIState.MOVING_OFF_PLATFORM
+
+                    elif fruit_y == self.y:
+                        print("Fruit is same level, moving now")
+                        self.state = AIState.MOVING_TO_FRUIT
                     else:
-                        self.state = AIState.MOVING_OFF_PLATFORM
+                        print("No statements, back to fruit")
+                        self.state = AIState.MOVING_TO_FRUIT
 
 
             if dx != 0:
