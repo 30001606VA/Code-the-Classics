@@ -1,9 +1,7 @@
 from random import choice, randint, random, shuffle
 from enum import Enum
 import pygame, pgzero, pgzrun, sys
-from pygame import *
 import math
-from heapq import heappush, heappop
 
 # Check Python version number. sys.version_info gives version as a tuple, e.g. if (3,7,2,'final',0) for version 3.7.2.
 # Unlike many languages, Python can compare two tuples in the same way that you can compare numbers.
@@ -24,7 +22,7 @@ if pgzero_version < [1,2]:
 # Set up constants
 WIDTH = 800
 HEIGHT = 480
-TITLE = "30001606 CS3S667 Coursework 2"
+TITLE = "Cavern"
 
 NUM_ROWS = 18
 NUM_COLUMNS = 28
@@ -290,11 +288,15 @@ class Fruit(GravityActor):
         anim_frame = str([0, 1, 2, 1][(game.timer // 6) % 4])
         self.image = "fruit" + str(self.type) + anim_frame
 
-def distance(obj1, obj2):
+class AIState(Enum):
+    LOOKING_FOR_FRUIT = 1
+    MOVING_TO_FRUIT = 2
+    MOVING_OFF_PLATFORM = 3
+
+def findClosestFruit(obj1, obj2):
     return math.sqrt((obj1.x - obj2.x)**2 + (obj1.y - obj2.y)**2)
 
 class Player(GravityActor):
-    
     def __init__(self):
         # Call constructor of parent class. Initial pos is 0,0 but reset is always called straight afterwards which
         # will set the actual starting position.
@@ -302,10 +304,8 @@ class Player(GravityActor):
 
         self.lives = 2
         self.score = 0
-        self.edge_direction = None  # New variable to remember edge direction
-        self.ignored_fruit = None  # Reference to the fruit currently being ignored
-        self.ignore_fruit_until = 0  # Time until the fruit can be considered again
-        
+        self.wallTimer = 5
+        self.state = AIState.LOOKING_FOR_FRUIT
 
     def reset(self):
         self.pos = (WIDTH / 2, 100)
@@ -315,7 +315,10 @@ class Player(GravityActor):
         self.hurt_timer = 100   # Invulnerable for this many frames
         self.health = 3
         self.blowing_orb = None
-        
+        self.state = AIState.LOOKING_FOR_FRUIT
+
+
+    
 
     def hit_test(self, other):
         # Check for collision between player and bolt - called from Bolt.update. Also check hurt_timer - after being hurt,
@@ -343,67 +346,116 @@ class Player(GravityActor):
 
         self.fire_timer -= 1
         self.hurt_timer -= 1
-        dx = 0
-        valid_fruits = []  # Initialize valid_fruits to an empty list
 
         if self.landed:
             # Hurt timer starts at 200, but drops to 100 once the player has landed
             self.hurt_timer = min(self.hurt_timer, 100)
 
         if self.hurt_timer > 100:
+            # We've just been hurt. Either carry out the sideways motion from being knocked by a bolt, or if health is
+            # zero, we're dropping out of the level, so check for our sprite reaching a certain Y coordinate before
+            # reducing our lives count and responding the player. We check for the Y coordinate being the screen height
+            # plus 50%, rather than simply the screen height, because the former effectively gives us a short delay
+            # before the player respawns.
             if self.health > 0:
                 self.move(self.direction_x, 0, 4)
             else:
-                if self.top >= HEIGHT * 1.5:
+                if self.top >= HEIGHT*1.5:
                     self.lives -= 1
                     self.reset()
         else:
             # We're not hurt
-            # Check if there are any fruits
+            # Get keyboard input. dx represents the direction the player is facing
+            dx = 0
+            
             if game.fruits:
-                # Find the closest fruit
-                closest_fruit = min(game.fruits, key=lambda fruit: distance(self, fruit))
+                fruit_x = 0
+                fruit_y = 0
+
+                closest_fruit = min(game.fruits, key=lambda fruit: findClosestFruit(self, fruit))
                 fruit_x, fruit_y = closest_fruit.pos
+                print(fruit_x, fruit_y)
+                print(self.pos)
+                self.state = AIState.MOVING_TO_FRUIT
 
-                # Calculate horizontal movement direction
-                dx = sign(fruit_x - self.x)
+                if self.state == AIState.MOVING_TO_FRUIT:
+                    #print(self.state)
+                    if self.x >= fruit_x - 10 and self.x <= fruit_x + 10 and fruit_y < self.y:
+                        print("Should be jumping")
+                        self.direction_x = 0
+                        self.vel_y = -16
+                        self.landed = False
+                        self.move(self.direction_x, 0, 3)
+                        game.play_sound("jump")
+                    elif fruit_x + 2 > self.x:
+                        self.direction_x = 1
+                        self.move(self.direction_x, 0, 3)
+                        if fruit_y > self.y:
+                            self.state = AIState.MOVING_OFF_PLATFORM
+                    elif fruit_x - 2 < self.x:
+                        self.direction_x = -1
+                        self.move(self.direction_x, 0, 3)
+                        if fruit_y > self.y:
+                            self.state = AIState.MOVING_OFF_PLATFORM
+                    elif fruit_x == self.x and fruit_y > self.y:
+                        self.direction_x = 1
+                        self.state = AIState.MOVING_OFF_PLATFORM
 
-                # Check if the player is on a platform
-                if block(int(self.x), int(self.y + GRID_BLOCK_SIZE)):
-                    # Player is on a platform
-                    if fruit_y > self.y and abs(self.x - fruit_x) <= GRID_BLOCK_SIZE:
-                        # Fruit is directly below the player
-                        # Check if there is a platform below the player
-                        if block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
-                            # Platform below the player
-                            # Find the nearest edge of the platform
-                            left_edge_x = int((self.x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE) * GRID_BLOCK_SIZE + LEVEL_X_OFFSET
-                            right_edge_x = left_edge_x + GRID_BLOCK_SIZE
-                            edge_x = left_edge_x if abs(self.x - left_edge_x) < abs(self.x - right_edge_x) else right_edge_x
-                            dx = sign(edge_x - self.x)
-                        else:
-                            # No platform below the player, move horizontally towards the fruit
-                            if fruit_x < WIDTH // 2:
-                                # Fruit is on the left side of the screen, move to the left
-                                dx = -1
-                            else:
-                                # Fruit is on the right side of the screen, move to the right
-                                dx = 1
-                else:
-                    # Player is not on a platform
-                    if fruit_y > self.y and not block(int(self.x), int(self.y + GRID_BLOCK_SIZE * 2)):
-                        # Fruit is below the player and there is no platform below
-                        # Fall vertically towards the fruit
-                        dx = 0
 
-                self.direction_x = dx
-                self.move(dx, 0, 3)  # Adjust the movement speed if needed
                 
-                # Jump if necessary
-                if fruit_y < self.y and self.vel_y == 0 and self.landed:
-                    self.vel_y = -20
-                    self.landed = False
-                    game.play_sound("jump")
+                if self.state == AIState.MOVING_OFF_PLATFORM:
+                    print(self.state)
+                    self.move(self.direction_x, 0, 3)
+                    if self.move(self.direction_x, 0, 3):
+                        if self.direction_x == 1:
+                            self.direction_x = -1
+                            self.move(self.direction_x, 0, 3)
+                        else:
+                            #self.direction_x = 1
+                            self.move(self.direction_x, 0, 3)
+                        self.wallTimer -= 1
+                        print(self.wallTimer)
+                    elif self.wallTimer <= 0:
+                        if self.direction_x == 1:
+                            self.direction_x = -1
+                            self.move(self.direction_x, 0, 3)
+                            self.wallTimer = 5
+                        else:
+                            self.direction_x = 1
+                            self.move(self.direction_x, 0, 3)
+                            self.wallTimer = 5
+                        print(self.direction_x)
+                        
+                    if fruit_y == self.y:
+                        self.state == AIState.MOVING_TO_FRUIT
+                    else:
+                        self.state = AIState.MOVING_OFF_PLATFORM
+
+
+            if dx != 0:
+                self.direction_x = dx
+
+                # If we haven't just fired an orb, carry out horizontal movement
+                if self.fire_timer < 10:
+                    self.move(dx, 0, 4)
+
+            # Do we need to create a new orb? Space must have been pressed and released, the minimum time between
+            # orbs must have passed, and there is a limit of 5 orbs.
+            if space_pressed() and self.fire_timer <= 0 and len(game.orbs) < 5:
+                # x position will be 38 pixels in front of the player position, while ensuring it is within the
+                # bounds of the level
+                x = min(730, max(70, self.x + self.direction_x * 38))
+                y = self.y - 35
+                self.blowing_orb = Orb((x,y), self.direction_x)
+                game.orbs.append(self.blowing_orb)
+                game.play_sound("blow", 4)
+                self.fire_timer = 20
+
+            if keyboard.up and self.vel_y == 0 and self.landed:
+                # Jump
+                self.vel_y = -16
+                self.landed = False
+                game.play_sound("jump")
 
         # Holding down space causes the current orb (if there is one) to be blown further
         if keyboard.space:
@@ -516,6 +568,7 @@ class Game:
         self.player = player
         self.level_colour = -1
         self.level = -1
+
         self.next_level()
 
     def fire_probability(self):
@@ -609,7 +662,6 @@ class Game:
         if self.timer % 100 == 0 and len(self.pending_enemies + self.enemies) > 0:
             # Create fruit at random position
             self.fruits.append(Fruit((randint(70, 730), randint(75, 400))))
-
 
         # Every 81 frames, if there is at least 1 pending enemy, and the number of active enemies is below the current
         # level's maximum enemies, create a robot
