@@ -295,6 +295,10 @@ class AIState(Enum):
 
 def findClosestFruit(obj1, obj2):
     return math.sqrt((obj1.x - obj2.x)**2 + (obj1.y - obj2.y)**2)
+def findClosestEnemy(obj1, obj2):
+    return math.sqrt((obj1.x - obj2.x)**2 + (obj1.y - obj2.y)**2)
+def findClosestBolt(obj1, obj2):
+    return math.sqrt((obj1.x - obj2.x)**2 + (obj1.y - obj2.y)**2)
 
 class Player(GravityActor):
     def __init__(self):
@@ -376,6 +380,20 @@ class Player(GravityActor):
                 fruit_x, fruit_y = closest_fruit.pos
                 print(fruit_x, fruit_y)
                 print(self.pos)
+                if game.enemies:
+                    closest_enemy = min(game.enemies, key=lambda enemy: findClosestEnemy(self, enemy))
+                    enemy_x, enemy_y = closest_enemy.pos
+                if game.bolts:
+                    closest_bolt = min(game.bolts, key=lambda bolt: findClosestBolt(self, bolt))
+                    bolt_x, bolt_y = closest_bolt.pos
+
+                if game.enemies and game.bolts:
+                    if enemy_x + 10 < self.x + 10 or bolt_x + 10 < self.x + 10:
+                        x = min(730, max(70, self.x + self.direction_x * 38))
+                        y = self.y - 35
+                        self.blowing_orb = Orb((x,y), self.direction_x)
+                        game.orbs.append(self.blowing_orb)
+                        game.play_sound("blow", 4)
 
                 if self.state == AIState.MOVING_TO_FRUIT:
                     print(self.state)
@@ -391,7 +409,6 @@ class Player(GravityActor):
                         self.move(self.direction_x, 0, 3)
                         if fruit_y > self.y:
                             self.state = AIState.MOVING_OFF_PLATFORM
-
                     elif fruit_x - 2 < self.x:
                         self.direction_x = -1
                         self.move(self.direction_x, 0, 3)
@@ -408,7 +425,7 @@ class Player(GravityActor):
                     # Check if AI is walking against a wall
                     # If walking against a wall, decrease timer
                     if self.move(self.direction_x, 0, 3):
-                        print("Monkey is against a wall wtf")
+                        print("Monkey is against a wall")
                         if self.direction_x == 1:
                             self.direction_x = -1
                             self.move(self.direction_x, 0, 3)
